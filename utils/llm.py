@@ -58,7 +58,7 @@ def generate_question(path_str, start, end):
                 "content": f"路径：{path_str}\n起点：{start}\n终点：{end}",
             },
         ],
-        extra_body={"reasoning": {"enabled": True}},
+        extra_body={"reasoning": {"enabled": False}},
     )
 
     return response.choices[0].message.content

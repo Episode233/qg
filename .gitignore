@@ -1,3 +1,4 @@
+.idea
 datasets/processed/*/*
 datasets/processed/relations.json
 models/bart-base/*

@@ -1,9 +1,7 @@
 import os
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import sys
 import argparse
 import torch
-import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -206,5 +204,5 @@ if __name__ == "__main__":
 
     train(args)
 
-# 示例：训练实验 A，使用 pq_2h_kb 数据集
-# python experiments/train.py -n a -d pq_3h_kb --epochs 50
+# 示例：训练实验 A，使用 mix_all_kb 数据集
+# python experiments/train.py -n a -d mix_all_kb --epochs 20 --batch_size 16

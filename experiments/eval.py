@@ -10,6 +10,7 @@ import evaluate  # HuggingFace 的评估库
 # --- 路径设置 ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
+metrics_dir = os.path.join(project_root, 'metrics')
 sys.path.append(project_root)
 
 from utils.graph_dataset import ExpaDataset, ExpaCollator
@@ -24,8 +25,8 @@ def compute_metrics(predictions, references):
     print(">>> Computing Metrics...")
 
     # 加载指标
-    bleu = evaluate.load("bleu")
-    rouge = evaluate.load("rouge")
+    bleu = evaluate.load(os.path.join(metrics_dir, 'bleu'))
+    rouge = evaluate.load(os.path.join(metrics_dir, 'rouge'))
 
     # 1. 计算 BLEU
     # BLEU 需要 references 是 list of list (因为可能有多参考答案，虽然这里只有1个)
@@ -166,4 +167,4 @@ if __name__ == "__main__":
     evaluate_model(args)
 
 # 示例：测试实验 A，使用 mix_all_kb 数据集
-# python experiments/eval.py -a a -d mix_all_kb -c results/a_mix_all_kb_2023xxxx/best_model.pt
+# python experiments/eval.py -a a -d mix_all_kb -c results/a_mix_all_kb_20251202_071154/best_model.pt

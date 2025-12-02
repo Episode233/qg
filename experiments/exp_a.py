@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch_geometric.nn import GATv2Conv
 from torch_geometric.utils import to_dense_batch
+from transformers.modeling_outputs import BaseModelOutput
 
 # 引用基础组件
 # 注意：train.py 会在根目录运行，所以这里使用 models.bart 是没问题的
@@ -119,7 +120,7 @@ class ExpaModel(nn.Module):
         # data.y: [batch_size, 64] (Target IDs)
         # 调用 BART 计算 Loss
         outputs = self.bart(
-            encoder_outputs=(encoder_hidden_states,),  # 替换掉原本的 encoder 输出
+            encoder_outputs=BaseModelOutput(last_hidden_state=encoder_hidden_states),
             attention_mask=encoder_attention_mask,  # 告诉 Decoder 哪里是填充的
             labels=data.y  # 目标，有了它就会自动算 Loss
         )
@@ -146,7 +147,7 @@ class ExpaModel(nn.Module):
         # --- E. Beam Search 生成 ---
         # 使用 BART 的 generate 方法
         generated_ids = self.bart.generate(
-            encoder_outputs=(encoder_hidden_states,),
+            encoder_outputs=BaseModelOutput(last_hidden_state=encoder_hidden_states),
             attention_mask=encoder_attention_mask,
             max_length=64,  # 生成问题的最大长度
             num_beams=num_beams,  # Beam Search 宽度

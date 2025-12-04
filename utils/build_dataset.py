@@ -3,36 +3,22 @@ import random
 import networkx as nx
 from tqdm import tqdm
 from datasets import Dataset, DatasetDict
-# 因为 llm.py 和 build_dataset.py 都在 utils 目录下，直接 import 即可
 from llm import generate_question
 
 # ==========================================
 # 1. 全局配置参数 (Path & Config)
 # ==========================================
 
-# --- 路径配置 (关键修正) ---
-# 获取当前脚本 (build_dataset.py) 所在的绝对路径: E:/.../utils
+# --- 路径配置 ---
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-# 获取项目根目录 (utils 的上一级): E:/.../
 PROJECT_ROOT = os.path.dirname(CURRENT_DIR)
-
-# 数据输入路径: E:/.../datasets/background_kbs
 DATA_DIR = os.path.join(PROJECT_ROOT, "datasets", "background_kbs")
-
-# 数据输出路径: E:/.../datasets/processed (根据你的目录结构，放这里更合理)
-# 如果你想放在根目录的 processed，就改为 os.path.join(PROJECT_ROOT, "processed")
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "datasets", "processed")
 
-KB_FILES = [
-    "pq_2h_kb.txt",
-    "pql_2h_kb.txt",
-    "pq_3h_kb.txt", 
-    "pql_3h_kb.txt"
-]
-
 # --- 采样参数 ---
-SAMPLES_PER_NODE_ATTEMPTS = 50   # 每个节点尝试采样的次数
-NOISE_NEIGHBORS = 5             # 噪声邻居数量
+SAMPLES_PER_NODE_ATTEMPTS = 2   # 每个节点尝试采样的次数
+NOISE_NEIGHBORS = 8             # 噪声邻居数量
+TARGET_TOTAL_SAMPLES = 3000     # 针对稠密图：限制总起点数量
 
 # ==========================================
 # 2. 图处理工具函数 (Graph Utils)
@@ -163,6 +149,10 @@ def process_kb_file(kb_filename):
 
     # 只保留那些出度(out_degree)大于0的节点作为起点
     valid_start_nodes = [n for n in G.nodes() if G.out_degree(n) > 0]
+
+    if len(valid_start_nodes) > TARGET_TOTAL_SAMPLES:
+        valid_start_nodes = random.sample(valid_start_nodes, TARGET_TOTAL_SAMPLES)
+
     print(f"    Valid start nodes: {len(valid_start_nodes)} / {len(all_nodes)}")
     
     pbar = tqdm(valid_start_nodes, desc="    Sampling", unit="node")
@@ -233,7 +223,5 @@ if __name__ == "__main__":
     print(f"Script location: {CURRENT_DIR}")
     print(f"Data directory : {DATA_DIR}")
     print(f"Output directory: {OUTPUT_DIR}")
-    
-    for kb_file in KB_FILES:
-        process_kb_file(kb_file)
-    # process_kb_file('pq_3h_kb.txt')
+
+    process_kb_file('WC2014_3h_kb.txt')

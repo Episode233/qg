@@ -57,7 +57,8 @@ def evaluate_model(args):
     # 1. 路径准备
     processed_dir = os.path.join(project_root, "datasets", "processed")
     data_path = os.path.join(processed_dir, args.dataset)
-    vocab_path = os.path.join(processed_dir, "relations.json")
+    vocab_filename = f"{args.dataset}_relations.json"
+    vocab_path = os.path.join(processed_dir, vocab_filename)
 
     # 结果保存路径
     result_save_dir = os.path.dirname(args.checkpoint)

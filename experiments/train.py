@@ -42,7 +42,8 @@ def train(args):
     print(">>> Loading Data...")
     processed_dir = os.path.join(project_root, "datasets", "processed")
     data_path = os.path.join(processed_dir, args.dataset)
-    vocab_path = os.path.join(processed_dir, "relations.json")
+    vocab_filename = f"{args.dataset}_relations.json"
+    vocab_path = os.path.join(processed_dir, vocab_filename)
 
     if not os.path.exists(data_path) or not os.path.exists(vocab_path):
         raise FileNotFoundError(f"Data not found at {data_path}. Run build_dataset.py first.")

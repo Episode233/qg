@@ -199,27 +199,30 @@ def process_kb_file(kb_filename, num_hops, samples_per_node_attempts, noise_neig
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
 
-    save_path = os.path.join(OUTPUT_DIR, kb_filename.replace('.txt', ''))
+    base_name = os.path.splitext(kb_filename)[0]
+    save_folder_name = f"{base_name}_{num_hops}h"
+    save_path = os.path.join(OUTPUT_DIR, save_folder_name)
     final_dict.save_to_disk(save_path)
     print(f"    Saved to: {save_path}")
 
     # ========== 新增：保存为JSON ==========
     # 保存为JSON格式
     for split_name, dataset in final_dict.items():
-        json_save_path = os.path.join(save_path, f"{kb_filename.replace('.txt', '')}_{split_name}.json")
+        json_filename = f"{save_folder_name}_{split_name}.json"
+        json_save_path = os.path.join(save_path, json_filename)
         dataset.to_json(json_save_path)
         print(f"    JSON {split_name} saved to: {json_save_path}")
 
 
-# process_kb_file('PQ_kb.txt', 2, 2, 5, 3000)
-# process_kb_file('PQ_kb.txt', 3, 5, 3, 3000)
-# process_kb_file('PQL_kb.txt', 2, 2, 5, 3000)
-# process_kb_file('PQL_kb.txt', 3, 5, 3, 3000)
-# process_kb_file('WC2014_kb.txt', 2, 2, 5, 3000)
-# process_kb_file('WC2014_kb.txt', 3, 5, 3, 3000)
-# process_kb_file('FB15k-237_kb.txt', 2, 2, 5, 3000)
-# process_kb_file('FB15k-237_kb.txt', 3, 5, 3, 3000)
-# process_kb_file('WN18RR_kb.txt', 2, 2, 5, 3000)
-# process_kb_file('WN18RR_kb.txt', 3, 5, 3, 3000)
-# process_kb_file('YAGO3-10_kb.txt', 2, 2, 5, 3000)
-# process_kb_file('YAGO3-10_kb.txt', 3, 5, 3, 3000)
+# process_kb_file('PQ.txt', 2, 2, 5, 3000)
+# process_kb_file('PQ.txt', 3, 5, 3, 3000)
+# process_kb_file('PQL.txt', 2, 2, 5, 3000)
+# process_kb_file('PQL.txt', 3, 5, 3, 3000)
+# process_kb_file('WC2014.txt', 2, 2, 5, 3000)
+# process_kb_file('WC2014.txt', 3, 5, 3, 3000)
+# process_kb_file('FB15k-237.txt', 2, 2, 5, 3000)
+# process_kb_file('FB15k-237.txt', 3, 5, 3, 3000)
+# process_kb_file('WN18RR.txt', 2, 2, 5, 3000)
+# process_kb_file('WN18RR.txt', 3, 5, 3, 3000)
+# process_kb_file('YAGO3-10.txt', 2, 2, 5, 3000)
+# process_kb_file('YAGO3-10.txt', 3, 5, 3, 3000)

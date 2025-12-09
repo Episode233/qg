@@ -242,16 +242,3 @@ if __name__ == "__main__":
         noise_neighbors=args.noise,
         target_total_samples=args.samples
     )
-
-# python utils/build_dataset.py -k PQ --hops 2 --attempts 2 --noise 5 --samples 3000
-# python utils/build_dataset.py -k PQ --hops 3 --attempts 5 --noise 3 --samples 3000
-# python utils/build_dataset.py -k PQL --hops 2 --attempts 2 --noise 5 --samples 3000
-# python utils/build_dataset.py -k PQL --hops 3 --attempts 5 --noise 3 --samples 3000
-# python utils/build_dataset.py -k WC2014 --hops 2 --attempts 2 --noise 5 --samples 3000
-# python utils/build_dataset.py -k WC2014 --hops 3 --attempts 5 --noise 3 --samples 3000
-# python utils/build_dataset.py -k FB15k-237 --hops 2 --attempts 2 --noise 5 --samples 3000
-# python utils/build_dataset.py -k FB15k-237 --hops 3 --attempts 5 --noise 3 --samples 3000
-# python utils/build_dataset.py -k WN18RR --hops 2 --attempts 2 --noise 5 --samples 3000
-# python utils/build_dataset.py -k WN18RR --hops 3 --attempts 5 --noise 3 --samples 3000
-# python utils/build_dataset.py -k YAGO3-10 --hops 2 --attempts 2 --noise 5 --samples 3000
-# python utils/build_dataset.py -k YAGO3-10 --hops 3 --attempts 5 --noise 3 --samples 3000

@@ -1,3 +1,4 @@
+import argparse
 import os
 import random
 import networkx as nx
@@ -123,6 +124,10 @@ def build_subgraph_data(G, path_nodes, path_edges, noise_m):
 def process_kb_file(kb_filename, num_hops, samples_per_node_attempts, noise_neighbors, target_total_samples):
     print(f"\n>>> Processing {kb_filename} | Hops: {num_hops}")
 
+    # 确保文件名带后缀（如果用户没输的话）
+    if not kb_filename.endswith(".txt"):
+        kb_filename += ".txt"
+
     kb_path = os.path.join(DATA_DIR, kb_filename)
 
     # 检查文件是否存在
@@ -214,15 +219,39 @@ def process_kb_file(kb_filename, num_hops, samples_per_node_attempts, noise_neig
         print(f"    JSON {split_name} saved to: {json_save_path}")
 
 
-# process_kb_file('PQ.txt', 2, 2, 5, 3000)
-# process_kb_file('PQ.txt', 3, 5, 3, 3000)
-# process_kb_file('PQL.txt', 2, 2, 5, 3000)
-# process_kb_file('PQL.txt', 3, 5, 3, 3000)
-# process_kb_file('WC2014.txt', 2, 2, 5, 3000)
-# process_kb_file('WC2014.txt', 3, 5, 3, 3000)
-# process_kb_file('FB15k-237.txt', 2, 2, 5, 3000)
-# process_kb_file('FB15k-237.txt', 3, 5, 3, 3000)
-# process_kb_file('WN18RR.txt', 2, 2, 5, 3000)
-# process_kb_file('WN18RR.txt', 3, 5, 3, 3000)
-# process_kb_file('YAGO3-10.txt', 2, 2, 5, 3000)
-# process_kb_file('YAGO3-10.txt', 3, 5, 3, 3000)
+# ==========================================
+# 4. 命令行入口 (Argparse Entry)
+# ==========================================
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Generate K-Hop QA dataset from Knowledge Base")
+
+    # 定义命令行参数
+    parser.add_argument("-k", "--kb", type=str, required=True, help="Knowledge Base filename (e.g., PQ.txt)")
+    parser.add_argument("--hops", type=int, default=2, help="Number of hops for the reasoning path (default: 2)")
+    parser.add_argument("--samples", type=int, default=3000, help="Target total number of starting nodes to sample (default: 3000)")
+    parser.add_argument("--noise", type=int, default=5, help="Number of noise neighbors to add per node (default: 5)")
+    parser.add_argument("--attempts", type=int, default=3, help="Number of attempts to generate paths per start node (default: 3)")
+    args = parser.parse_args()
+
+    # 调用主函数
+    process_kb_file(
+        kb_filename=args.kb,
+        num_hops=args.hops,
+        samples_per_node_attempts=args.attempts,
+        noise_neighbors=args.noise,
+        target_total_samples=args.samples
+    )
+
+# python utils/build_dataset.py -k PQ --hops 2 --attempts 2 --noise 5 --samples 3000
+# python utils/build_dataset.py -k PQ --hops 3 --attempts 5 --noise 3 --samples 3000
+# python utils/build_dataset.py -k PQL --hops 2 --attempts 2 --noise 5 --samples 3000
+# python utils/build_dataset.py -k PQL --hops 3 --attempts 5 --noise 3 --samples 3000
+# python utils/build_dataset.py -k WC2014 --hops 2 --attempts 2 --noise 5 --samples 3000
+# python utils/build_dataset.py -k WC2014 --hops 3 --attempts 5 --noise 3 --samples 3000
+# python utils/build_dataset.py -k FB15k-237 --hops 2 --attempts 2 --noise 5 --samples 3000
+# python utils/build_dataset.py -k FB15k-237 --hops 3 --attempts 5 --noise 3 --samples 3000
+# python utils/build_dataset.py -k WN18RR --hops 2 --attempts 2 --noise 5 --samples 3000
+# python utils/build_dataset.py -k WN18RR --hops 3 --attempts 5 --noise 3 --samples 3000
+# python utils/build_dataset.py -k YAGO3-10 --hops 2 --attempts 2 --noise 5 --samples 3000
+# python utils/build_dataset.py -k YAGO3-10 --hops 3 --attempts 5 --noise 3 --samples 3000

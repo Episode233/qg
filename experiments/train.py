@@ -43,7 +43,7 @@ def train(args):
     processed_dir = os.path.join(project_root, "datasets", "processed")
     data_path = os.path.join(processed_dir, args.dataset)
     vocab_filename = f"{args.dataset}_relations.json"
-    vocab_path = os.path.join(processed_dir, vocab_filename)
+    vocab_path = os.path.join(data_path, vocab_filename)
 
     if not os.path.exists(data_path) or not os.path.exists(vocab_path):
         raise FileNotFoundError(f"Data not found at {data_path}. Run build_dataset.py first.")
@@ -208,5 +208,5 @@ if __name__ == "__main__":
 
     train(args)
 
-# 示例：训练实验 A，使用 mix_all_kb 数据集
-# python experiments/train.py -e a -d mix_all_kb --epochs 20 --batch_size 16
+# 示例：训练实验 A，使用 PQ_2h 数据集
+# python experiments/train.py -e a -d PQ_2h --epochs 50 --batch_size 16

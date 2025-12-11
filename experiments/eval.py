@@ -58,7 +58,7 @@ def evaluate_model(args):
     processed_dir = os.path.join(project_root, "datasets", "processed")
     data_path = os.path.join(processed_dir, args.dataset)
     vocab_filename = f"{args.dataset}_relations.json"
-    vocab_path = os.path.join(processed_dir, vocab_filename)
+    vocab_path = os.path.join(data_path, vocab_filename)
 
     # 结果保存路径
     result_save_dir = os.path.dirname(args.checkpoint)
@@ -164,11 +164,11 @@ if __name__ == "__main__":
     parser.add_argument('-e', '--exp_name', type=str, default='a')
     parser.add_argument('-d', '--dataset', type=str, required=True, help="dataset used for testing")
     parser.add_argument('-c', '--checkpoint', type=str, required=True, help="path to best_model.pt")
-    parser.add_argument('--batch_size', type=int, default=16)  # 推理不占显存，可以大点
+    parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--gnn_layers', type=int, default=3)
 
     args = parser.parse_args()
     evaluate_model(args)
 
-# 示例：测试实验 A，使用 mix_all_kb 数据集
-# python experiments/eval.py -e a -d mix_all_kb -c results/a_mix_all_kb_20251205_031043/best_model.pt
+# 示例：测试实验 A，使用 PQ_2h 数据集
+# python experiments/eval.py -e a -d YAGO3-10_3h_kb -c results/a_YAGO3-10_3h_kb_20251205_063340/best_model.pt

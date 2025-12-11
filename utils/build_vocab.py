@@ -12,9 +12,9 @@ DATA_DIR = os.path.join(PROJECT_ROOT, "datasets", "processed")
 def build_relation_vocab(dataset_name):
     dataset_path = os.path.join(DATA_DIR, dataset_name)
 
-    # 动态生成输出文件名: 例如 mix_all_kb_relations.json
+    # 动态生成输出文件名: 例如 PQ_2h_relations.json
     output_filename = f"{dataset_name}_relations.json"
-    output_path = os.path.join(DATA_DIR, output_filename)
+    output_path = os.path.join(dataset_path, output_filename)
 
     print(f"Target Dataset: {dataset_name}")
     print(f"Checking path: {dataset_path}")
@@ -58,11 +58,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Build relation vocab for a specific dataset")
     # 添加命令行参数 -d
     parser.add_argument('-d', '--dataset', type=str, required=True,
-                        help="Name of the dataset folder (e.g., mix_all_kb)")
+                        help="Name of the dataset folder (e.g., PQ_2h)")
 
     args = parser.parse_args()
 
     build_relation_vocab(args.dataset)
 
 # 为特定数据集生成词表
-# python utils/build_vocab.py -d mix_all_kb
+# python utils/build_vocab.py -d PQ_2h

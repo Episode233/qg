@@ -75,7 +75,7 @@ def evaluate_model(args):
     collator = ExpaCollator()
 
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size,
-                             shuffle=False, collate_fn=collator)
+                             shuffle=False, collate_fn=collator, num_workers=8, pin_memory=True)
 
     num_relations = len(test_dataset.rel2id)
 
@@ -164,11 +164,11 @@ if __name__ == "__main__":
     parser.add_argument('-e', '--exp_name', type=str, default='a')
     parser.add_argument('-d', '--dataset', type=str, required=True, help="dataset used for testing")
     parser.add_argument('-c', '--checkpoint', type=str, required=True, help="path to best_model.pt")
-    parser.add_argument('--batch_size', type=int, default=16)
+    parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--gnn_layers', type=int, default=3)
 
     args = parser.parse_args()
     evaluate_model(args)
 
 # 示例：测试实验 A，使用 PQ_2h 数据集
-# python experiments/eval.py -e a -d YAGO3-10_3h_kb -c results/a_YAGO3-10_3h_kb_20251205_063340/best_model.pt
+# python experiments/eval.py -e a -d PQ_2h -c results/a_PQ_2h_20251205_063340/best_model.pt

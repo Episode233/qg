@@ -57,9 +57,9 @@ def train(args):
     collator = ExpaCollator()
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
-                              shuffle=True, collate_fn=collator, num_workers=0)
+                              shuffle=True, collate_fn=collator, num_workers=8, pin_memory=True)
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size,
-                            shuffle=False, collate_fn=collator, num_workers=0)
+                            shuffle=False, collate_fn=collator, num_workers=8, pin_memory=True)
 
     num_relations = len(train_dataset.rel2id)
     print(f">>> Data Loaded. Train: {len(train_dataset)}, Val: {len(val_dataset)}")
@@ -91,6 +91,7 @@ def train(args):
     # 5. 训练循环
     # ==========================================
     best_val_loss = float('inf')
+    patience_counter = 0  # 【新增】耐心计数器
 
     # 用于记录 Loss 的字典，方便最后画图
     history = {
@@ -152,9 +153,18 @@ def train(args):
         # ==========================================
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
+            patience_counter = 0  # 【重置】只要有进步，就重置计数器
             save_path = os.path.join(save_dir, "best_model.pt")
             torch.save(model.state_dict(), save_path)
             print(f">>> New Best Model Saved!")
+        else:
+            patience_counter += 1  # 【增加】没进步，计数器+1
+            print(f">>> No improvement. Patience: {patience_counter}/{args.patience}")
+
+        # 【新增】触发停止条件
+        if patience_counter >= args.patience:
+            print(f"\n>>> Early Stopping triggered! No improvement for {args.patience} epochs.")
+            break  # 跳出 epoch 循环
 
     print(">>> Training Finished.")
 
@@ -197,16 +207,22 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train EXPA Model")
     parser.add_argument('-e', '--exp_name', type=str, default='a', help="Experiment Name")
     parser.add_argument('-d', '--dataset', type=str, required=True, help="Dataset name")
-    parser.add_argument('--epochs', type=int, default=10)
-    parser.add_argument('--batch_size', type=int, default=8)
-    parser.add_argument('--grad_accum_steps', type=int, default=4)
+    parser.add_argument('--epochs', type=int, default=233, help="Max epochs (will stop early)")
+    parser.add_argument('--batch_size', type=int, default=128)
+    parser.add_argument('--grad_accum_steps', type=int, default=1)
     parser.add_argument('--lr', type=float, default=5e-4)
     parser.add_argument('--gnn_layers', type=int, default=3)
     parser.add_argument('--dropout', type=float, default=0.1)
+    parser.add_argument('--patience', type=int, default=5, help="Early stopping patience")
 
     args = parser.parse_args()
 
     train(args)
 
-# 示例：训练实验 A，使用 PQ_2h 数据集
-# python experiments/train.py -e a -d PQ_2h --epochs 50 --batch_size 16
+# 示例：训练实验 A，使用 PQ_mix 数据集
+# python experiments/train.py -e a -d PQ_mix --batch_size 32 --patience 10 --grad_accum_steps 1 --lr 5e-4
+# python experiments/train.py -e a -d PQL_mix --batch_size 32 --patience 10 --grad_accum_steps 1 --lr 5e-4
+# python experiments/train.py -e a -d WC2014_mix --batch_size 128 --patience 5 --grad_accum_steps 1 --lr 5e-4
+# python experiments/train.py -e a -d FB15k-237_mix --batch_size 128 --patience 5 --grad_accum_steps 1 --lr 5e-4
+# python experiments/train.py -e a -d YAGO3-10_mix --batch_size 128 --patience 5 --grad_accum_steps 1 --lr 5e-4
+# python experiments/train.py -e a -d WN18RR_mix --batch_size 128 --patience 5 --grad_accum_steps 1 --lr 5e-4

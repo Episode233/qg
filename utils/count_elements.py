@@ -1,6 +1,6 @@
 import networkx as nx
 
-file_path='../datasets/background_kbs/pql_3h_kb.txt'
+file_path='../datasets/background_kbs/PQ.txt'
 
 G = nx.DiGraph()
 with open(file_path, 'r', encoding='utf-8') as f:

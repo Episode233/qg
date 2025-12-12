@@ -1,4 +1,5 @@
 .idea
 datasets/processed/*
+datasets/mixed/*
 models/bart-base/*
 results/*

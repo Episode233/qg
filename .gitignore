@@ -1,5 +1,4 @@
 .idea
-datasets/processed/*/*
-datasets/processed/*.json
+datasets/processed/*
 models/bart-base/*
 results/*

@@ -5,10 +5,6 @@
 python utils/build_dataset.py -k PQ --hops 2 --attempts 10 --noise 3 --samples 10000
 python utils/build_dataset.py -k PQ --hops 3 --attempts 10 --noise 3 --samples 10000
 
-# PQL   点数 6505   边数 5575
-python utils/build_dataset.py -k PQL --hops 2 --attempts 10 --noise 3 --samples 10000
-python utils/build_dataset.py -k PQL --hops 3 --attempts 50 --noise 3 --samples 10000
-
 
 ## 稠密小图
 # WC2014    点数 1127   边数 6476

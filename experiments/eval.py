@@ -16,7 +16,7 @@ sys.path.append(project_root)
 from utils.graph_dataset import ExpaDataset, ExpaCollator
 from models.bart import get_bart_with_lora
 from datasets import load_from_disk
-
+from utils.llm import evaluate_question
 
 def compute_metrics(predictions, references):
     """
@@ -48,6 +48,63 @@ def compute_metrics(predictions, references):
     results['ROUGE-L'] = round(rouge_res['rougeL'] * 100, 2)
 
     return results
+
+
+def compute_llm_score(hf_test_dataset, all_preds, all_golds, limit=-1):
+    """
+    对整个测试集运行 LLM 评分
+    注意: 这里会遍历原始 dataset 来获取 Graph Context
+    limit: 限制评估的样本数，-1 表示不限制 (跑全量)
+    """
+    print(f"\n>>> Starting LLM Evaluation (Limit: {limit if limit > 0 else 'All'})...")
+
+    scores_list = [-1] * len(hf_test_dataset)
+    valid_scores = []
+
+    # 遍历所有样本 (这里假设 all_preds 和 hf_test_dataset 是一一对应的，顺序没变)
+    for i, item in enumerate(tqdm(hf_test_dataset, desc="LLM Judging")):
+        if limit > 0 and i >= limit:
+            break  # 达到限制，停止调用 LLM，后面的保持 -1
+
+        # 1. 还原三元组上下文 (Graph Context)
+        nodes = item['nodes']
+        src_indices = item['edge_index'][0]
+        tgt_indices = item['edge_index'][1]
+        relations = item['edge_attr']
+
+        triples_text = []
+        for src, tgt, rel in zip(src_indices, tgt_indices, relations):
+            # 去掉 Special Tokens
+            s_text = nodes[src].replace("[TOPIC] ", "").replace("[ANS] ", "")
+            t_text = nodes[tgt].replace("[TOPIC] ", "").replace("[ANS] ", "")
+            triples_text.append(f"({s_text}, {rel}, {t_text})")
+
+        context_str = "\n".join(triples_text)
+
+        # 2. 获取其他信息
+        start_node_idx = item['label_ids'][0]
+        end_node_idx = item['label_ids'][1]
+        start_node = nodes[start_node_idx].replace("[TOPIC] ", "")
+        end_node = nodes[end_node_idx].replace("[ANS] ", "")
+
+        ref_q = all_golds[i]
+        gen_q = all_preds[i]
+
+        # 3. 调用 LLM 打分
+        score = evaluate_question(context_str, start_node, end_node, ref_q, gen_q)
+
+        # 更新分数列表
+        scores_list[i] = score
+        valid_scores.append(score)
+
+    # 计算平均分 (只计算实际评估过的样本)
+    if len(valid_scores) > 0:
+        avg_score = round(sum(valid_scores) / len(valid_scores), 2)
+    else:
+        avg_score = 0
+
+    print(f">>> Evaluated {len(valid_scores)} samples. Avg Score: {avg_score}")
+    return avg_score, scores_list
 
 
 def evaluate_model(args):
@@ -109,7 +166,7 @@ def evaluate_model(args):
 
             # 使用 Beam Search 生成
             # num_beams=4 是标准配置，效果通常比 greedy search 好很多
-            gen_ids = model.generate(batch, num_beams=4)
+            gen_ids = model.generate(batch, num_beams=args.num_beams)
 
             # 解码 Prediction
             preds = tokenizer.batch_decode(gen_ids, skip_special_tokens=True)
@@ -122,15 +179,22 @@ def evaluate_model(args):
             all_preds.extend(preds)
             all_golds.extend(golds)
 
+    # 我们需要传入原始的 hf_ds_dict['test']，因为它包含了原始的 edge_index 和 nodes
+    llm_avg_score, llm_scores_list = compute_llm_score(hf_ds_dict['test'], all_preds, all_golds, limit=args.llm_limit)
+
     # 5. 保存生成的 Case
     df = pd.DataFrame({
         'Generated': all_preds,
-        'Reference': all_golds
+        'Reference': all_golds,
+        'LLM_Score': llm_scores_list  # 【新增】每条的分数
     })
     df.to_csv(output_csv, index=False, encoding='utf-8-sig')
 
     # 6. 计算并打印分数
     scores = compute_metrics(all_preds, all_golds)
+
+    # 【新增】加入 LLM 分数
+    scores['LLM-Judge'] = llm_avg_score
 
     print("\n" + "=" * 30)
     print("       EVALUATION REPORT       ")
@@ -142,6 +206,7 @@ def evaluate_model(args):
     print(f"ROUGE-1: {scores['ROUGE-1']}")
     print(f"ROUGE-2: {scores['ROUGE-2']}")
     print(f"ROUGE-L: {scores['ROUGE-L']}")
+    print(f"LLM-Judge: {scores['LLM-Judge']}")  # 【新增】打印
     print("=" * 30)
 
     # 把分数保存到文件
@@ -166,9 +231,11 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--checkpoint', type=str, required=True, help="path to best_model.pt")
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--gnn_layers', type=int, default=3)
+    parser.add_argument('--num_beams', type=int, default=4, help="Beam size for generation")
+    parser.add_argument('--llm_limit', type=int, default=100, help="Max samples for LLM eval (-1 for all)")
 
     args = parser.parse_args()
     evaluate_model(args)
 
-# 示例：测试实验 A，使用 PQ_2h 数据集
-# python experiments/eval.py -e a -d PQ_2h -c results/a_PQ_2h_20251205_063340/best_model.pt
+# 示例：测试实验 A，使用 PQ_mix 数据集
+# python experiments/eval.py -e a -d PQ_mix -c results/a_PQ_mix_20251205_063340/best_model.pt

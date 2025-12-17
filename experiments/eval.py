@@ -6,8 +6,9 @@ import pandas as pd
 import numpy as np
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-import evaluate  # HuggingFace 的评估库
+import evaluate
 import sacrebleu
+import nltk
 
 # --- 路径设置 ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -20,16 +21,55 @@ from models.bart import get_bart_with_lora
 from datasets import load_from_disk
 from utils.llm import evaluate_question
 
+
+def compute_distinct_n(predictions, n):
+    """
+    计算 Distinct-N (多样性指标)
+    """
+    if len(predictions) == 0:
+        return 0.0
+
+    generated_ngrams = []
+    total_ngrams_count = 0
+
+    for text in predictions:
+        # 1. 分词 (优先 NLTK，失败则用 split)
+        try:
+            tokens = nltk.word_tokenize(text.lower())
+        except Exception:
+            # Fallback: 如果 NLTK 没装好或报错，使用简单的空格分词
+            tokens = text.lower().strip().split()
+
+        if len(tokens) < n:
+            continue
+
+        # 2. 生成 n-grams (使用 zip 高效生成)
+        # 例如: [a, b, c], n=2 -> [(a,b), (b,c)]
+        ngrams = list(zip(*[tokens[i:] for i in range(n)]))
+
+        generated_ngrams.extend(ngrams)
+        total_ngrams_count += len(ngrams)
+
+    if total_ngrams_count == 0:
+        return 0.0
+
+    # 3. 计算不重复比例
+    distinct_count = len(set(generated_ngrams))
+
+    return round(distinct_count / total_ngrams_count * 100, 2)
+
+
 def compute_metrics(predictions, references):
     """
-    计算 SacreBLEU, ROUGE, METEOR, BERTScore 分数
+    计算 SacreBLEU, ROUGE, METEOR, BERTScore, Distinct-N 分数
     """
     print(">>> Computing Metrics...")
 
     # 加载指标
-    rouge = evaluate.load(path=os.path.join(metrics_dir, 'rouge'))
-    meteor = evaluate.load(path=os.path.join(metrics_dir, 'meteor'))
-    bertscore = evaluate.load(path=os.path.join(metrics_dir, "bertscore"))
+    rouge = evaluate.load(path=os.path.join(metrics_dir, 'rouge'),download_mode="reuse_cache_if_exists")
+    meteor = evaluate.load(path=os.path.join(metrics_dir, 'meteor'),download_mode="reuse_cache_if_exists")
+    bertscore = evaluate.load(path=os.path.join(metrics_dir, "bertscore"),download_mode="reuse_cache_if_exists")
+    nltk.data.find('tokenizers/punkt')
 
     results = {}
 
@@ -52,6 +92,10 @@ def compute_metrics(predictions, references):
     bert_res = bertscore.compute(predictions=predictions, references=references, lang="en")
     # BERTScore 返回的是 list，需要求 mean
     results['BERTScore'] = round(np.mean(bert_res['f1']) * 100, 2)
+
+    # --- Distinct-N ---
+    results['Dist-1'] = compute_distinct_n(predictions, 1)
+    results['Dist-2'] = compute_distinct_n(predictions, 2)
 
     return results
 
@@ -246,4 +290,4 @@ if __name__ == "__main__":
     evaluate_model(args)
 
 # 示例：测试实验 A，使用 PQ_mix 数据集
-# python experiments/eval.py -e a -d PQ_mix -c results/a_PQ_mix_20251212_090839/best_model.pt
+# HF_ENDPOINT=https://hf-mirror.com python experiments/eval.py -e a -d PQ_mix -c results/a_PQ_mix_20251212_090839/best_model.pt

@@ -34,9 +34,10 @@ def train(args):
     wandb.init(
         project="KGQG",  # 项目名称，建议固定
         name=run_name,  # 也就是 Run ID
+        job_type="train",
         config=vars(args),  # 自动记录所有超参数
         group=args.exp_name,  # 按实验类型分组 (ExpA, ExpB...)
-        tags=[args.dataset],  # 按数据集打标签
+        tags=[args.dataset, 'train'],  # 按数据集打标签
         reinit=True
     )
 

@@ -2,6 +2,7 @@ import os
 import sys
 import argparse
 import torch
+import time
 import pandas as pd
 import numpy as np
 from torch.utils.data import DataLoader
@@ -9,6 +10,7 @@ from tqdm import tqdm
 import evaluate
 import sacrebleu
 import nltk
+import wandb
 
 # --- 路径设置 ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -108,14 +110,18 @@ def compute_llm_score(hf_test_dataset, all_preds, all_golds, limit=-1):
     """
     print(f"\n>>> Starting LLM Evaluation (Limit: {limit if limit > 0 else 'All'})...")
 
-    scores_list = [-1] * len(hf_test_dataset)
+    # 初始化 WandB Table
+    # 列定义：ID, 输入图, 主题实体, 答案实体, 标准问题, 生成问题, LLM分数, LLM理由
+    eval_table = wandb.Table(columns=[
+        "ID", "Graph Context", "Topic", "Ans", "Reference", "Prediction", "LLM Score", "LLM Reason"
+    ])
+
+    scores_list = []
+    reasons_list = []
     valid_scores = []
 
     # 遍历所有样本 (这里假设 all_preds 和 hf_test_dataset 是一一对应的，顺序没变)
     for i, item in enumerate(tqdm(hf_test_dataset, desc="LLM Judging")):
-        if limit > 0 and i >= limit:
-            break  # 达到限制，停止调用 LLM，后面的保持 -1
-
         # 1. 还原三元组上下文 (Graph Context)
         nodes = item['nodes']
         src_indices = item['edge_index'][0]
@@ -140,12 +146,30 @@ def compute_llm_score(hf_test_dataset, all_preds, all_golds, limit=-1):
         ref_q = all_golds[i]
         gen_q = all_preds[i]
 
-        # 3. 调用 LLM 打分
-        score = evaluate_question(context_str, start_node, end_node, ref_q, gen_q)
+        # 如果 limit=-1 (跑全量) 或者 当前索引 < limit，则调用 LLM
+        if limit == -1 or i < limit:
+            score, reason = evaluate_question(context_str, start_node, end_node, ref_q, gen_q)
+            valid_scores.append(score)
+        else:
+            # 超过 limit 的部分，填默认值
+            score = -1
+            reason = "N/A (Limit Reached)"
 
         # 更新分数列表
-        scores_list[i] = score
-        valid_scores.append(score)
+        scores_list.append(score)
+        reasons_list.append(reason)
+
+        # --- C. 填入 WandB Table ---
+        eval_table.add_data(
+            i,  # ID
+            context_str,  # Graph
+            start_node,  # Topic
+            end_node,  # Ans
+            ref_q,  # Ref
+            gen_q,  # Pred
+            score,  # LLM Score
+            reason  # LLM Reason
+        )
 
     # 计算平均分 (只计算实际评估过的样本)
     if len(valid_scores) > 0:
@@ -154,10 +178,23 @@ def compute_llm_score(hf_test_dataset, all_preds, all_golds, limit=-1):
         avg_score = 0
 
     print(f">>> Evaluated {len(valid_scores)} samples. Avg Score: {avg_score}")
-    return avg_score, scores_list
+    return avg_score, scores_list, reasons_list, eval_table
 
 
 def evaluate_model(args):
+    timestamp = time.strftime("%Y%m%d_%H%M")
+    run_name = f"eval_{args.exp_name}_{args.dataset}_{timestamp}"
+
+    wandb.init(
+        project="KGQG",
+        name=run_name,
+        job_type="eval",
+        config=vars(args),
+        group=args.exp_name,
+        tags=[args.dataset, "eval"],
+        reinit=True
+    )
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f">>> Evaluating using: {device}")
 
@@ -230,13 +267,14 @@ def evaluate_model(args):
             all_golds.extend(golds)
 
     # 我们需要传入原始的 hf_ds_dict['test']，因为它包含了原始的 edge_index 和 nodes
-    llm_avg_score, llm_scores_list = compute_llm_score(hf_ds_dict['test'], all_preds, all_golds, limit=args.llm_limit)
+    llm_avg, llm_scores, llm_reasons, wandb_table = compute_llm_score(hf_ds_dict['test'], all_preds, all_golds, limit=args.llm_limit)
 
-    # 5. 保存生成的 Case
+    # 5. 保存本地 CSV
     df = pd.DataFrame({
         'Generated': all_preds,
         'Reference': all_golds,
-        'LLM_Score': llm_scores_list  # 【新增】每条的分数
+        'LLM_Score': llm_scores,
+        'LLM_Reason': llm_reasons
     })
     df.to_csv(output_csv, index=False, encoding='utf-8-sig')
 
@@ -244,7 +282,7 @@ def evaluate_model(args):
     scores = compute_metrics(all_preds, all_golds)
 
     # 【新增】加入 LLM 分数
-    scores['LLM-Judge'] = llm_avg_score
+    scores['LLM-Judge'] = llm_avg
 
     print("\n" + "=" * 30)
     print("       EVALUATION REPORT       ")
@@ -266,12 +304,13 @@ def evaluate_model(args):
         for k, v in scores.items():
             f.write(f"{k}: {v}\n")
 
-    # 7. 打印几个 Case 给用户看
-    print("\n>>> Sample Predictions:")
-    for i in range(min(5, len(all_preds))):
-        print(f"Pred: {all_preds[i]}")
-        print(f"Ref:  {all_golds[i]}")
-        print("-" * 20)
+    wandb.summary.update(scores)
+
+    # B. 上传详细表格
+    print(">>> Uploading WandB Table...")
+    wandb.log({"eval_results": wandb_table})
+
+    wandb.finish()
 
     print(f"\n>>> Full results saved to: {result_save_dir}")
 

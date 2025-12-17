@@ -10,6 +10,7 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import wandb
+from transformers import get_linear_schedule_with_warmup
 
 # --- 路径黑魔法 ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -100,11 +101,23 @@ def train(args):
     wandb.watch(model, log="parameters", log_freq=100)
 
     # ==========================================
-    # 4. 优化器配置
+    # 4. 优化器、调度器配置
     # ==========================================
     trainable_params = [p for p in model.parameters() if p.requires_grad]
     optimizer = optim.AdamW(trainable_params, lr=args.lr, weight_decay=1e-4)
     print(f">>> Optimizer ready. Training {len(trainable_params)} tensors.")
+
+    steps_per_epoch = len(train_loader) // args.grad_accum_steps
+    num_training_steps = steps_per_epoch * args.epochs
+    num_warmup_steps = int(num_training_steps * args.warmup_ratio)
+    print(f">>> Scheduler: Linear Decay with Warmup")
+    print(f"    Total Steps: {num_training_steps}, Warmup Steps: {num_warmup_steps}")
+
+    scheduler = get_linear_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=num_warmup_steps,
+        num_training_steps=num_training_steps
+    )
 
     # ==========================================
     # 5. 训练循环
@@ -136,6 +149,7 @@ def train(args):
             if (step + 1) % args.grad_accum_steps == 0:
                 torch.nn.utils.clip_grad_norm_(trainable_params, 1.0)
                 optimizer.step()
+                scheduler.step()
                 optimizer.zero_grad()
 
                 # 实时在命令行显示当前 Loss
@@ -275,11 +289,12 @@ if __name__ == "__main__":
     parser.add_argument('-d', '--dataset', type=str, required=True, help="Dataset name")
 
     # 训练超参
-    parser.add_argument('--epochs', type=int, default=233, help="Max epochs (will stop early)")
+    parser.add_argument('--epochs', type=int, default=100, help="Max epochs (will stop early)")
     parser.add_argument('--patience', type=int, default=5, help="Early stopping patience")
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--grad_accum_steps', type=int, default=1)
     parser.add_argument('--lr', type=float, default=5e-4)
+    parser.add_argument('--warmup_ratio', type=float, default=0.1, help="Ratio of warmup steps")
 
     # 模型超参
     parser.add_argument('--gnn_layers', type=int, default=3)

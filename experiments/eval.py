@@ -3,9 +3,11 @@ import sys
 import argparse
 import torch
 import pandas as pd
+import numpy as np
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import evaluate  # HuggingFace 的评估库
+import sacrebleu
 
 # --- 路径设置 ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -20,32 +22,36 @@ from utils.llm import evaluate_question
 
 def compute_metrics(predictions, references):
     """
-    计算 BLEU 和 ROUGE 分数
+    计算 SacreBLEU, ROUGE, METEOR, BERTScore 分数
     """
     print(">>> Computing Metrics...")
 
     # 加载指标
-    bleu = evaluate.load(os.path.join(metrics_dir, 'bleu'))
-    rouge = evaluate.load(os.path.join(metrics_dir, 'rouge'))
-
-    # 1. 计算 BLEU
-    # BLEU 需要 references 是 list of list (因为可能有多参考答案，虽然这里只有1个)
-    # refs_for_bleu = [[ref] for ref in references]
-    # HuggingFace evaluate 的 bleu 实现比较简单，直接传 list 也行，
-    # 但标准做法通常是 text.
+    rouge = evaluate.load(path=os.path.join(metrics_dir, 'rouge'))
+    meteor = evaluate.load(path=os.path.join(metrics_dir, 'meteor'))
+    bertscore = evaluate.load(path=os.path.join(metrics_dir, "bertscore"))
 
     results = {}
 
-    # 计算 BLEU-1, 2, 3, 4
-    # max_order=4 默认就是 BLEU-4
-    bleu_res = bleu.compute(predictions=predictions, references=references)
-    results['BLEU'] = round(bleu_res['bleu'] * 100, 2)
+    # --- SacreBLEU ---
+    bleu_res = sacrebleu.corpus_bleu(predictions, [references])
+    results['BLEU'] = round(bleu_res.score, 2)
 
-    # 2. 计算 ROUGE (L)
+    # --- ROUGE ---
     rouge_res = rouge.compute(predictions=predictions, references=references)
     results['ROUGE-1'] = round(rouge_res['rouge1'] * 100, 2)
     results['ROUGE-2'] = round(rouge_res['rouge2'] * 100, 2)
     results['ROUGE-L'] = round(rouge_res['rougeL'] * 100, 2)
+
+    # --- METEOR ---
+    meteor_res = meteor.compute(predictions=predictions, references=references)
+    results['METEOR'] = round(meteor_res['meteor'] * 100, 2)
+
+    # --- BERTScore ---
+    # lang='en' 指定英语，rescale_with_baseline=True 可选
+    bert_res = bertscore.compute(predictions=predictions, references=references, lang="en")
+    # BERTScore 返回的是 list，需要求 mean
+    results['BERTScore'] = round(np.mean(bert_res['f1']) * 100, 2)
 
     return results
 
@@ -206,7 +212,9 @@ def evaluate_model(args):
     print(f"ROUGE-1: {scores['ROUGE-1']}")
     print(f"ROUGE-2: {scores['ROUGE-2']}")
     print(f"ROUGE-L: {scores['ROUGE-L']}")
-    print(f"LLM-Judge: {scores['LLM-Judge']}")  # 【新增】打印
+    print(f"METEOR:  {scores['METEOR']}")
+    print(f"BERTScore: {scores['BERTScore']}")
+    print(f"LLM-Judge: {scores['LLM-Judge']}")
     print("=" * 30)
 
     # 把分数保存到文件
@@ -238,4 +246,4 @@ if __name__ == "__main__":
     evaluate_model(args)
 
 # 示例：测试实验 A，使用 PQ_mix 数据集
-# python experiments/eval.py -e a -d PQ_mix -c results/a_PQ_mix_20251205_063340/best_model.pt
+# python experiments/eval.py -e a -d PQ_mix -c results/a_PQ_mix_20251212_090839/best_model.pt

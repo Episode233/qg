@@ -9,6 +9,7 @@ import time
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+import wandb
 
 # --- 路径黑魔法 ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -23,17 +24,31 @@ from datasets import load_from_disk
 
 def train(args):
     # ==========================================
+    # 0. WandB 初始化 & 命名规则
+    # ==========================================
+    # 格式化时间: 20251217_1605 (自动补零对齐)
+    timestamp = time.strftime("%Y%m%d_%H%M")
+    run_name = f"{args.exp_name}_{args.dataset}_{timestamp}"
+
+    # 初始化 WandB
+    wandb.init(
+        project="KGQG",  # 项目名称，建议固定
+        name=run_name,  # 也就是 Run ID
+        config=vars(args),  # 自动记录所有超参数
+        group=args.exp_name,  # 按实验类型分组 (ExpA, ExpB...)
+        tags=[args.dataset],  # 按数据集打标签
+        reinit=True
+    )
+
+    # ==========================================
     # 1. 初始化与配置
     # ==========================================
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f">>> Using Device: {device}")
 
     # 创建结果目录 results/exp_name_timestamp
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    exp_name = f"{args.exp_name}_{args.dataset}_{timestamp}"
-    save_dir = os.path.join(project_root, "results", exp_name)
+    save_dir = os.path.join(project_root, "results", run_name)
     os.makedirs(save_dir, exist_ok=True)
-
     print(f">>> Results will be saved to: {save_dir}")
 
     # ==========================================
@@ -80,6 +95,9 @@ def train(args):
 
     model.to(device)
 
+    # WandB 监控模型结构 (可选)
+    wandb.watch(model, log="parameters", log_freq=100)
+
     # ==========================================
     # 4. 优化器配置
     # ==========================================
@@ -121,6 +139,14 @@ def train(args):
 
                 # 实时在命令行显示当前 Loss
                 current_loss = loss.item() * args.grad_accum_steps
+
+                # 【WandB】记录 Train Loss 和 LR
+                wandb.log({
+                    "train/loss": current_loss,
+                    "train/lr": optimizer.param_groups[0]['lr'],
+                    "epoch": epoch + 1
+                })
+
                 pbar.set_postfix({'loss': f"{current_loss:.4f}"})
 
             total_train_loss += loss.item() * args.grad_accum_steps
@@ -132,18 +158,50 @@ def train(args):
         # ==========================================
         model.eval()
         total_val_loss = 0
+
+        # 用于记录生成的文本
+        sample_preds = []
+        sample_targets = []
+
         with torch.no_grad():
-            for batch in val_loader:
+            for i, batch in enumerate(val_loader):
                 batch = batch.to(device)
                 loss = model(batch)
                 total_val_loss += loss.item()
+
+                # 只对第一个 Batch 进行生成抽查
+                if i == 0:
+                    # 使用 Greedy Search (num_beams=1) 快速预览
+                    gen_ids = model.generate(batch, num_beams=1)
+
+                    preds = tokenizer.batch_decode(gen_ids, skip_special_tokens=True)
+                    tgt_ids = batch.y.clone()
+                    tgt_ids[tgt_ids == -100] = tokenizer.pad_token_id
+                    targets = tokenizer.batch_decode(tgt_ids, skip_special_tokens=True)
+
+                    sample_preds = preds
+                    sample_targets = targets
 
         avg_val_loss = total_val_loss / len(val_loader)
 
         # 命令行打印 Epoch 总结
         print(f"Epoch {epoch + 1} | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
 
-        # 记录数据
+        # 【WandB】记录生成文本 (Table)
+        # 创建一个 Table，列名固定
+        gen_table = wandb.Table(columns=["Epoch", "Target", "Prediction"])
+        # 添加数据 (只取前 5 条展示，避免传太多)
+        for t, p in zip(sample_targets[:5], sample_preds[:5]):
+            gen_table.add_data(epoch + 1, t, p)
+
+        # 【WandB】记录 Val Loss 和 Table
+        wandb.log({
+            "val/loss": avg_val_loss,
+            "val/generations": gen_table,
+            "epoch": epoch + 1
+        })
+
+        # 本地记录数据
         history['epoch'].append(epoch + 1)
         history['train_loss'].append(avg_train_loss)
         history['val_loss'].append(avg_val_loss)
@@ -157,6 +215,9 @@ def train(args):
             save_path = os.path.join(save_dir, "best_model.pt")
             torch.save(model.state_dict(), save_path)
             print(f">>> New Best Model Saved!")
+
+            # 【WandB】标记最佳 Loss
+            wandb.summary["best_val_loss"] = best_val_loss
         else:
             patience_counter += 1  # 【增加】没进步，计数器+1
             print(f">>> No improvement. Patience: {patience_counter}/{args.patience}")
@@ -171,7 +232,7 @@ def train(args):
     # ==========================================
     # 8. 训练结束：使用 Seaborn 画图并保存
     # ==========================================
-    print(">>> Generating Loss Plots...")
+    print(">>> Training Finished. Generating plots...")
 
     # 转换数据格式
     df = pd.DataFrame(history)
@@ -182,7 +243,6 @@ def train(args):
 
     # 设置 Seaborn 风格
     sns.set_theme(style="whitegrid")
-
     plt.figure(figsize=(10, 6))
 
     # 绘制 Train 和 Val Loss
@@ -202,18 +262,27 @@ def train(args):
     print(f">>> Plot saved to: {plot_path}")
     print(f">>> Log saved to: {csv_path}")
 
+    # 结束 WandB Run
+    wandb.finish()
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train EXPA Model")
-    parser.add_argument('-e', '--exp_name', type=str, default='a', help="Experiment Name")
+    parser = argparse.ArgumentParser(description="Train Model with WandB")
+
+    # 核心参数
+    parser.add_argument('-e', '--exp_name', type=str, default='a', help="Experiment Name (a/b/c/d)")
     parser.add_argument('-d', '--dataset', type=str, required=True, help="Dataset name")
+
+    # 训练超参
     parser.add_argument('--epochs', type=int, default=233, help="Max epochs (will stop early)")
+    parser.add_argument('--patience', type=int, default=5, help="Early stopping patience")
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--grad_accum_steps', type=int, default=1)
     parser.add_argument('--lr', type=float, default=5e-4)
+
+    # 模型超参
     parser.add_argument('--gnn_layers', type=int, default=3)
     parser.add_argument('--dropout', type=float, default=0.1)
-    parser.add_argument('--patience', type=int, default=5, help="Early stopping patience")
 
     args = parser.parse_args()
 

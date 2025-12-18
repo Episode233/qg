@@ -18,7 +18,7 @@ project_root = os.path.dirname(current_dir)
 sys.path.append(project_root)
 
 # 导入自定义模块
-from utils.graph_dataset import ExpaDataset, ExpaCollator
+from utils.graph_dataset import ExpDataset, ExpCollator
 from models.bart import get_bart_with_lora
 from datasets import load_from_disk
 
@@ -68,10 +68,10 @@ def train(args):
     tokenizer, _ = get_bart_with_lora()
     hf_ds_dict = load_from_disk(data_path)
 
-    train_dataset = ExpaDataset(hf_ds_dict['train'], vocab_path, tokenizer)
-    val_dataset = ExpaDataset(hf_ds_dict['validation'], vocab_path, tokenizer)
+    train_dataset = ExpDataset(hf_ds_dict['train'], vocab_path, tokenizer)
+    val_dataset = ExpDataset(hf_ds_dict['validation'], vocab_path, tokenizer)
 
-    collator = ExpaCollator()
+    collator = ExpCollator()
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
                               shuffle=True, collate_fn=collator, num_workers=8, pin_memory=True)

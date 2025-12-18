@@ -4,7 +4,7 @@ from torch.utils.data import Dataset
 from torch_geometric.data import Data, Batch
 
 
-class ExpaDataset(Dataset):
+class ExpDataset(Dataset):
     def __init__(self, hf_dataset, relation_vocab_path, tokenizer, max_node_len=32, max_tgt_len=64):
         """
         参数:
@@ -85,7 +85,7 @@ class ExpaDataset(Dataset):
         return data
 
 
-class ExpaCollator:
+class ExpCollator:
     """
     DataLoader 的胶水函数。
     作用: 把 DataLoader 取出的 [Data1, Data2, Data3, Data4] 拼成一个 Batch 对象。

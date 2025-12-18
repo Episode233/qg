@@ -18,7 +18,7 @@ project_root = os.path.dirname(current_dir)
 metrics_dir = os.path.join(project_root, 'metrics')
 sys.path.append(project_root)
 
-from utils.graph_dataset import ExpaDataset, ExpaCollator
+from utils.graph_dataset import ExpDataset, ExpCollator
 from models.bart import get_bart_with_lora
 from datasets import load_from_disk
 from utils.llm import evaluate_question
@@ -215,8 +215,8 @@ def evaluate_model(args):
 
     hf_ds_dict = load_from_disk(data_path)
     # 加载 Test 集
-    test_dataset = ExpaDataset(hf_ds_dict['test'], vocab_path, tokenizer)
-    collator = ExpaCollator()
+    test_dataset = ExpDataset(hf_ds_dict['test'], vocab_path, tokenizer)
+    collator = ExpCollator()
 
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size,
                              shuffle=False, collate_fn=collator, num_workers=8, pin_memory=True)

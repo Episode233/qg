@@ -29,7 +29,7 @@ def train(args):
     # ==========================================
     # 格式化时间: 20251217_1605 (自动补零对齐)
     timestamp = time.strftime("%Y%m%d_%H%M")
-    run_name = f"{args.exp_name}_{args.dataset}_{timestamp}"
+    run_name = f"train_{args.exp_name}_{args.dataset}_{timestamp}"
 
     # 初始化 WandB
     wandb.init(

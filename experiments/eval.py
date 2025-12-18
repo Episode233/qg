@@ -150,6 +150,17 @@ def compute_llm_score(hf_test_dataset, all_preds, all_golds, limit=-1):
         if limit == -1 or i < limit:
             score, reason = evaluate_question(context_str, start_node, end_node, ref_q, gen_q)
             valid_scores.append(score)
+
+            eval_table.add_data(
+                i,  # ID
+                context_str,  # Graph
+                start_node,  # Topic
+                end_node,  # Ans
+                ref_q,  # Ref
+                gen_q,  # Pred
+                score,  # LLM Score
+                reason  # LLM Reason
+            )
         else:
             # 超过 limit 的部分，填默认值
             score = -1
@@ -158,18 +169,6 @@ def compute_llm_score(hf_test_dataset, all_preds, all_golds, limit=-1):
         # 更新分数列表
         scores_list.append(score)
         reasons_list.append(reason)
-
-        # --- C. 填入 WandB Table ---
-        eval_table.add_data(
-            i,  # ID
-            context_str,  # Graph
-            start_node,  # Topic
-            end_node,  # Ans
-            ref_q,  # Ref
-            gen_q,  # Pred
-            score,  # LLM Score
-            reason  # LLM Reason
-        )
 
     # 计算平均分 (只计算实际评估过的样本)
     if len(valid_scores) > 0:

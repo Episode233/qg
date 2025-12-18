@@ -95,6 +95,9 @@ def train(args):
     elif args.exp_name == 'c':
         from experiments.exp_c import ExpCModel
         model = ExpCModel(num_relations=num_relations, gnn_layers=args.gnn_layers, dropout=args.dropout)
+    elif args.exp_name == 'd':
+        from experiments.exp_d import ExpDModel
+        model = ExpDModel(num_relations=num_relations, gnn_layers=args.gnn_layers, dropout=args.dropout)
     else:
         raise ValueError(f"Unknown experiment: {args.exp_name}")
 
@@ -165,7 +168,7 @@ def train(args):
                     "epoch": epoch + 1
                 }
 
-                # 捞取 Alpha 统计信息 (如果是 ExpC)
+                # 捞取 Alpha 统计信息
                 if hasattr(model, 'alpha_stats') and model.alpha_stats:
                     # model.alpha_stats 里的 key 已经是 "alpha/mean" 这种格式了
                     logs.update(model.alpha_stats)

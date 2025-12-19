@@ -231,6 +231,12 @@ def evaluate_model(args):
     elif args.exp_name == 'b':
         from experiments.exp_b import ExpBModel
         model = ExpBModel(num_relations=num_relations, gnn_layers=args.gnn_layers)
+    elif args.exp_name == 'c':
+        from experiments.exp_c import ExpCModel
+        model = ExpCModel(num_relations=num_relations, gnn_layers=args.gnn_layers)
+    elif args.exp_name == 'd':
+        from experiments.exp_d import ExpDModel
+        model = ExpDModel(num_relations=num_relations, gnn_layers=args.gnn_layers)
     else:
         raise ValueError("Unknown experiment")
 

@@ -6,16 +6,16 @@
 
 ## 📋 目录
 
-- [项目简介](#项目简介)
-- [核心特性](#核心特性)
-- [系统架构](#系统架构)
-- [环境配置](#环境配置)
-- [数据集准备](#数据集准备)
-- [模型训练](#模型训练)
-- [模型评估](#模型评估)
-- [实验设计](#实验设计)
-- [项目结构](#项目结构)
-- [评估指标](#评估指标)
+- [项目简介](#-项目简介)
+- [核心特性](#-核心特性)
+- [系统架构](#-系统架构)
+- [实验设计](#-实验设计)
+- [项目结构](#-项目结构)
+- [环境配置](#-环境配置)
+- [数据集准备](#-数据集准备)
+- [模型训练](#-模型训练)
+- [评估指标](#-评估指标)
+- [模型评估](#-模型评估)
 - [引用](#引用)
 
 ## 🎯 项目简介
@@ -54,12 +54,87 @@ graph TB
 
 ### 模型架构对比
 
-| 实验 | 模型名称 | 核心特点 | 关键组件 |
-|------|---------|---------|---------|
-| **ExpA** | GNN-Enhanced | 纯图神经网络增强 | GAT + Relation Embedding |
-| **ExpB** | Pure BART | 仅使用语言模型 | BART Baseline |
-| **ExpC** | Gated Fusion | 门控融合机制 | α * GNN + (1-α) * BART |
-| **ExpD** | Structure-Aware | 结构信息注入 | Node Type + Hop Distance |
+| 实验     | 模型名称        | 核心特点         | 关键组件                 |
+| -------- | --------------- | ---------------- | ------------------------ |
+| **ExpA** | GNN-Enhanced    | 纯图神经网络增强 | GAT + Relation Embedding |
+| **ExpB** | Pure BART       | 仅使用语言模型   | BART Baseline            |
+| **ExpC** | Gated Fusion    | 门控融合机制     | α * GNN + (1-α) * BART   |
+| **ExpD** | Structure-Aware | 结构信息注入     | Node Type + Hop Distance |
+
+## 🔬 实验设计
+
+### Experiment A: GNN-Enhanced Model
+
+**核心思想**：使用 Graph Attention Network (GAT) 对节点进行多跳推理增强。
+
+**关键组件**：
+- Relation Embedding：学习关系向量
+- 多层 GATv2Conv：融合边信息的图注意力
+- Residual Connections：防止梯度消失
+
+### Experiment B: Pure BART Baseline
+
+**核心思想**：仅使用 BART Encoder 的语义特征，不进行图推理。
+
+**设计目的**：作为基线模型，验证图结构信息的必要性。
+
+### Experiment C: Gated Fusion Model
+
+**核心思想**：通过可学习的门控机制动态融合语义流和逻辑流。
+
+**融合公式**：
+```
+α = Sigmoid(Linear([Text; Graph]))
+Fused = α * Graph + (1 - α) * Text
+```
+
+**特点**：
+- 模型自适应决定"看字"还是"看图"
+- 提供可解释性（通过 α 值分析）
+
+### Experiment D: Structure-Aware Model（推荐）
+
+**核心思想**：在 ExpC 基础上注入结构信息（节点类型 + 跳数距离）。
+
+**结构信息**：
+- **Node Type**：0=Topic（起点）, 1=Ans（终点）, 2=Other
+- **Hop Distance**：BFS 计算的跳数（0-9）
+
+**注入方式**：
+```python
+x_struct = x_text + type_emb + hop_emb
+```
+
+## 📁 项目结构
+
+```
+qg/
+├── datasets/
+│   ├── background_kbs/          # 原始知识图谱文件
+│   ├── processed/               # 生成的子图数据（2h, 3h）
+│   └── mixed/                   # 合并后的数据集（_mix）
+├── experiments/
+│   ├── train.py                 # 训练主脚本
+│   ├── eval.py                  # 评估主脚本
+│   ├── exp_a.py                 # 实验 A：GNN 增强
+│   ├── exp_b.py                 # 实验 B：BART 基线
+│   ├── exp_c.py                 # 实验 C：门控融合
+│   └── exp_d.py                 # 实验 D：结构感知
+├── models/
+│   └── bart.py                  # BART + LoRA 封装
+├── metrics/
+│   ├── bertscore/               # BERTScore 评估
+│   ├── meteor/                  # METEOR 评估
+│   └── rouge/                   # ROUGE 评估
+├── utils/
+│   ├── build_dataset.py         # 数据集生成
+│   ├── build_vocab.py           # 关系词表构建
+│   ├── mix_dataset.py           # 数据集合并
+│   ├── graph_dataset.py         # PyG 数据加载器
+│   └── llm.py                   # LLM API 调用
+├── results/                     # 训练和评估结果
+└── build_dataset.sh             # 批量数据生成脚本
+```
 
 ## 🔧 环境配置
 
@@ -181,16 +256,16 @@ python experiments/train.py \
 
 ### 实验参数说明
 
-| 参数 | 说明 | 默认值 | 推荐范围 |
-|-----|------|--------|---------|
-| `-e, --exp_name` | 实验类型 (a/b/c/d) | a | - |
-| `-d, --dataset` | 数据集名称 | - | PQ_mix, PQL_mix, etc. |
-| `--epochs` | 最大训练轮数 | 100 | 50-200 |
-| `--patience` | 早停耐心值 | 5 | 3-10 |
-| `--batch_size` | 批次大小 | 128 | 32-256 |
-| `--lr` | 学习率 | 5e-4 | 1e-4 to 1e-3 |
-| `--gnn_layers` | GNN层数 | 3 | 2-4 |
-| `--grad_accum_steps` | 梯度累积步数 | 1 | 1-4 |
+| 参数                 | 说明               | 默认值 | 推荐范围              |
+| -------------------- | ------------------ | ------ | --------------------- |
+| `-e, --exp_name`     | 实验类型 (a/b/c/d) | a      | -                     |
+| `-d, --dataset`      | 数据集名称         | -      | PQ_mix, PQL_mix, etc. |
+| `--epochs`           | 最大训练轮数       | 100    | 50-200                |
+| `--patience`         | 早停耐心值         | 5      | 3-10                  |
+| `--batch_size`       | 批次大小           | 128    | 32-256                |
+| `--lr`               | 学习率             | 5e-4   | 1e-4 to 1e-3          |
+| `--gnn_layers`       | GNN层数            | 3      | 2-4                   |
+| `--grad_accum_steps` | 梯度累积步数       | 1      | 1-4                   |
 
 ### 训练示例
 
@@ -228,6 +303,28 @@ results/
     ├── loss_curve.png          # 损失曲线图
     └── training_log.csv        # 训练日志
 ```
+
+## 📊 评估指标
+
+### 自动指标
+
+| 指标             | 含义                         | 评估维度   |
+| ---------------- | ---------------------------- | ---------- |
+| **BLEU**         | N-gram 匹配度                | 生成精度   |
+| **ROUGE-1/2/L**  | 召回率（单词/双词/最长序列） | 覆盖度     |
+| **METEOR**       | 考虑同义词的匹配             | 语义相似度 |
+| **BERTScore**    | 基于 BERT 的语义相似度       | 深层语义   |
+| **Distinct-1/2** | 不重复 1/2-gram 比例         | 多样性     |
+
+### LLM-Judge 评估
+
+使用 GPT-4o-mini 作为裁判，从五个维度打分（总分 100）：
+
+1. **Fluency & Grammar**（0-20 分）：语法流畅性
+2. **Faithfulness**（0-20 分）：是否忠实于图上下文
+3. **Logical Correctness**（0-20 分）：逻辑是否通顺
+4. **Constraints Compliance**（0-20 分）：是否符合多跳约束且未泄露答案
+5. **Semantic Alignment**（0-20 分）：与参考问题的语义一致性
 
 ## 📈 模型评估
 
@@ -278,103 +375,6 @@ results/<exp_name>_<dataset>_<timestamp>/
 - `Reference`：标准答案问题
 - `LLM_Score`：LLM 打分（0-100）
 - `LLM_Reason`：LLM 评分理由
-
-## 🔬 实验设计
-
-### Experiment A: GNN-Enhanced Model
-
-**核心思想**：使用 Graph Attention Network (GAT) 对节点进行多跳推理增强。
-
-**关键组件**：
-- Relation Embedding：学习关系向量
-- 多层 GATv2Conv：融合边信息的图注意力
-- Residual Connections：防止梯度消失
-
-### Experiment B: Pure BART Baseline
-
-**核心思想**：仅使用 BART Encoder 的语义特征，不进行图推理。
-
-**设计目的**：作为基线模型，验证图结构信息的必要性。
-
-### Experiment C: Gated Fusion Model
-
-**核心思想**：通过可学习的门控机制动态融合语义流和逻辑流。
-
-**融合公式**：
-```
-α = Sigmoid(Linear([Text; Graph]))
-Fused = α * Graph + (1 - α) * Text
-```
-
-**特点**：
-- 模型自适应决定"看字"还是"看图"
-- 提供可解释性（通过 α 值分析）
-
-### Experiment D: Structure-Aware Model（推荐）
-
-**核心思想**：在 ExpC 基础上注入结构信息（节点类型 + 跳数距离）。
-
-**结构信息**：
-- **Node Type**：0=Topic（起点）, 1=Ans（终点）, 2=Other
-- **Hop Distance**：BFS 计算的跳数（0-9）
-
-**注入方式**：
-```python
-x_struct = x_text + type_emb + hop_emb
-```
-
-## 📁 项目结构
-
-```
-qg/
-├── datasets/
-│   ├── background_kbs/          # 原始知识图谱文件
-│   ├── processed/               # 生成的子图数据（2h, 3h）
-│   └── mixed/                   # 合并后的数据集（_mix）
-├── experiments/
-│   ├── train.py                 # 训练主脚本
-│   ├── eval.py                  # 评估主脚本
-│   ├── exp_a.py                 # 实验 A：GNN 增强
-│   ├── exp_b.py                 # 实验 B：BART 基线
-│   ├── exp_c.py                 # 实验 C：门控融合
-│   └── exp_d.py                 # 实验 D：结构感知
-├── models/
-│   └── bart.py                  # BART + LoRA 封装
-├── metrics/
-│   ├── bertscore/               # BERTScore 评估
-│   ├── meteor/                  # METEOR 评估
-│   └── rouge/                   # ROUGE 评估
-├── utils/
-│   ├── build_dataset.py         # 数据集生成
-│   ├── build_vocab.py           # 关系词表构建
-│   ├── mix_dataset.py           # 数据集合并
-│   ├── graph_dataset.py         # PyG 数据加载器
-│   └── llm.py                   # LLM API 调用
-├── results/                     # 训练和评估结果
-└── build_dataset.sh             # 批量数据生成脚本
-```
-
-## 📊 评估指标
-
-### 自动指标
-
-| 指标 | 含义 | 评估维度 |
-|------|------|---------|
-| **BLEU** | N-gram 匹配度 | 生成精度 |
-| **ROUGE-1/2/L** | 召回率（单词/双词/最长序列） | 覆盖度 |
-| **METEOR** | 考虑同义词的匹配 | 语义相似度 |
-| **BERTScore** | 基于 BERT 的语义相似度 | 深层语义 |
-| **Distinct-1/2** | 不重复 1/2-gram 比例 | 多样性 |
-
-### LLM-Judge 评估
-
-使用 GPT-4o-mini 作为裁判，从五个维度打分（总分 100）：
-
-1. **Fluency & Grammar**（0-20 分）：语法流畅性
-2. **Faithfulness**（0-20 分）：是否忠实于图上下文
-3. **Logical Correctness**（0-20 分）：逻辑是否通顺
-4. **Constraints Compliance**（0-20 分）：是否符合多跳约束且未泄露答案
-5. **Semantic Alignment**（0-20 分）：与参考问题的语义一致性
 
 ## 🎓 Notes
 

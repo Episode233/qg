@@ -29,6 +29,15 @@ class ExpDModel(nn.Module):
         self.max_hop_id = 9
         self.hop_embedding = nn.Embedding(self.max_hop_id + 1, self.d_model)
 
+        # 【新增】结构特征融合层 (Structure Fusion Layer)
+        # 输入维度是 3倍 d_model (Text + Type + Hop)
+        # 作用：强制将结构信息和语义信息在进入 GNN 前进行深度融合
+        self.struct_projection = nn.Sequential(
+            nn.Linear(self.d_model * 3, self.d_model),
+            nn.LayerNorm(self.d_model),  # LayerNorm 非常关键，拉齐不同来源向量的分布
+            nn.GELU()
+        )
+
         # --- B. 图逻辑流组件 ---
         self.relation_embedding = nn.Embedding(num_relations, self.d_model)
         self.gnn_layers = nn.ModuleList()
@@ -74,18 +83,18 @@ class ExpDModel(nn.Module):
         """
         # 1. 类型 Embedding
         # data.node_type: [N] -> [N, 768]
-        type_emb = self.node_type_embedding(data.node_type)
+        v_type = self.node_type_embedding(data.node_type)
 
         # 2. 跳数 Embedding
         # 防止 BFS 算出来的距离超过 Embedding 表的大小
         hops = data.hop_id.clamp(max=self.max_hop_id)
-        hop_emb = self.hop_embedding(hops)
+        v_hop = self.hop_embedding(hops)
 
-        # 3. 注入 (相加)
+        # 3. 拼接
         # x_struct 包含了: "字面意思" + "我是起点吗" + "我离起点多远"
-        x_struct = x_text + type_emb + hop_emb
+        x_struct = torch.cat([x_text, v_type, v_hop], dim=-1)
 
-        return x_struct
+        return self.struct_projection(x_struct)
 
     def forward(self, data):
         # 1. 纯语义流 (Semantic Stream)

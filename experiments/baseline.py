@@ -1,0 +1,303 @@
+import os
+import sys
+import argparse
+import torch
+import time
+import pandas as pd
+import numpy as np
+from tqdm import tqdm
+import evaluate
+import sacrebleu
+import nltk
+import wandb
+
+# --- 路径设置 ---
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
+metrics_dir = os.path.join(project_root, 'metrics')
+sys.path.append(project_root)
+
+from datasets import load_from_disk
+from utils.llm import generate_baseline_question
+from utils.llm import evaluate_question
+
+
+def compute_distinct_n(predictions, n):
+    """
+    计算 Distinct-N (多样性指标)
+    """
+    if len(predictions) == 0:
+        return 0.0
+
+    generated_ngrams = []
+    total_ngrams_count = 0
+
+    for text in predictions:
+        # 1. 分词 (优先 NLTK，失败则用 split)
+        try:
+            tokens = nltk.word_tokenize(text.lower())
+        except Exception:
+            # Fallback: 如果 NLTK 没装好或报错，使用简单的空格分词
+            tokens = text.lower().strip().split()
+
+        if len(tokens) < n:
+            continue
+
+        # 2. 生成 n-grams (使用 zip 高效生成)
+        # 例如: [a, b, c], n=2 -> [(a,b), (b,c)]
+        ngrams = list(zip(*[tokens[i:] for i in range(n)]))
+
+        generated_ngrams.extend(ngrams)
+        total_ngrams_count += len(ngrams)
+
+    if total_ngrams_count == 0:
+        return 0.0
+
+    # 3. 计算不重复比例
+    distinct_count = len(set(generated_ngrams))
+
+    return round(distinct_count / total_ngrams_count * 100, 2)
+
+
+def compute_metrics(predictions, references):
+    """
+    计算 SacreBLEU, ROUGE, METEOR, BERTScore, Distinct-N 分数
+    """
+    print(">>> Computing Metrics...")
+
+    # 加载指标
+    rouge = evaluate.load(path=os.path.join(metrics_dir, 'rouge'), download_mode="reuse_cache_if_exists")
+    meteor = evaluate.load(path=os.path.join(metrics_dir, 'meteor'), download_mode="reuse_cache_if_exists")
+    bertscore = evaluate.load(path=os.path.join(metrics_dir, "bertscore"), download_mode="reuse_cache_if_exists")
+    nltk.data.find('tokenizers/punkt')
+
+    results = {}
+
+    # --- SacreBLEU ---
+    bleu_res = sacrebleu.corpus_bleu(predictions, [references])
+    results['BLEU'] = round(bleu_res.score, 2)
+
+    # --- ROUGE ---
+    rouge_res = rouge.compute(predictions=predictions, references=references)
+    results['ROUGE-1'] = round(rouge_res['rouge1'] * 100, 2)
+    results['ROUGE-2'] = round(rouge_res['rouge2'] * 100, 2)
+    results['ROUGE-L'] = round(rouge_res['rougeL'] * 100, 2)
+
+    # --- METEOR ---
+    meteor_res = meteor.compute(predictions=predictions, references=references)
+    results['METEOR'] = round(meteor_res['meteor'] * 100, 2)
+
+    # --- BERTScore ---
+    # lang='en' 指定英语，rescale_with_baseline=True 可选
+    bert_res = bertscore.compute(predictions=predictions, references=references, lang="en")
+    # BERTScore 返回的是 list，需要求 mean
+    results['BERTScore'] = round(np.mean(bert_res['f1']) * 100, 2)
+
+    # --- Distinct-N ---
+    results['Dist-1'] = compute_distinct_n(predictions, 1)
+    results['Dist-2'] = compute_distinct_n(predictions, 2)
+
+    return results
+
+
+def compute_llm_score(hf_test_dataset, all_preds, all_golds, limit=-1):
+    """
+    对整个测试集运行 LLM 评分
+    注意: 这里会遍历原始 dataset 来获取 Graph Context
+    limit: 限制评估的样本数，-1 表示不限制 (跑全量)
+    """
+    print(f"\n>>> Starting LLM Evaluation (Limit: {limit if limit > 0 else 'All'})...")
+
+    # 初始化 WandB Table
+    # 列定义：ID, 输入图, 主题实体, 答案实体, 标准问题, 生成问题, LLM分数, LLM理由
+    eval_table = wandb.Table(columns=[
+        "ID", "Graph Context", "Topic", "Ans", "Reference", "Prediction", "LLM Score", "LLM Reason"
+    ])
+
+    scores_list = []
+    reasons_list = []
+    valid_scores = []
+
+    # 遍历所有样本 (这里假设 all_preds 和 hf_test_dataset 是一一对应的，顺序没变)
+    for i, item in enumerate(tqdm(hf_test_dataset, desc="LLM Judging")):
+        # 1. 还原三元组上下文 (Graph Context)
+        nodes = item['nodes']
+        src_indices = item['edge_index'][0]
+        tgt_indices = item['edge_index'][1]
+        relations = item['edge_attr']
+
+        triples_text = []
+        for src, tgt, rel in zip(src_indices, tgt_indices, relations):
+            # 去掉 Special Tokens
+            s_text = nodes[src].replace("[TOPIC] ", "").replace("[ANS] ", "")
+            t_text = nodes[tgt].replace("[TOPIC] ", "").replace("[ANS] ", "")
+            triples_text.append(f"({s_text}, {rel}, {t_text})")
+
+        context_str = "\n".join(triples_text)
+
+        # 2. 获取其他信息
+        start_node_idx = item['label_ids'][0]
+        end_node_idx = item['label_ids'][1]
+        start_node = nodes[start_node_idx].replace("[TOPIC] ", "")
+        end_node = nodes[end_node_idx].replace("[ANS] ", "")
+
+        ref_q = all_golds[i]
+        gen_q = all_preds[i]
+
+        # 如果 limit=-1 (跑全量) 或者 当前索引 < limit，则调用 LLM
+        if limit == -1 or i < limit:
+            score, reason = evaluate_question(context_str, start_node, end_node, ref_q, gen_q)
+            valid_scores.append(score)
+
+            eval_table.add_data(
+                i,  # ID
+                context_str,  # Graph
+                start_node,  # Topic
+                end_node,  # Ans
+                ref_q,  # Ref
+                gen_q,  # Pred
+                score,  # LLM Score
+                reason  # LLM Reason
+            )
+        else:
+            # 超过 limit 的部分，填默认值
+            score = -1
+            reason = "N/A (Limit Reached)"
+
+        # 更新分数列表
+        scores_list.append(score)
+        reasons_list.append(reason)
+
+    # 计算平均分 (只计算实际评估过的样本)
+    if len(valid_scores) > 0:
+        avg_score = round(sum(valid_scores) / len(valid_scores), 2)
+    else:
+        avg_score = 0
+
+    print(f">>> Evaluated {len(valid_scores)} samples. Avg Score: {avg_score}")
+    return avg_score, scores_list, reasons_list, eval_table
+
+
+def llm_baseline(args):
+    timestamp = time.strftime("%Y%m%d_%H%M")
+    run_name = f"eval_baseline_{args.dataset}_{timestamp}"
+
+    # 1. WandB 初始化
+    wandb.init(
+        project="KGQG",
+        name=run_name,
+        job_type="eval",
+        config=vars(args),
+        group="baseline",
+        tags=[args.dataset, "eval"],
+        reinit=True
+    )
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f">>> Evaluating using: {device}")
+    print(f">>> Running LLM Baseline on {args.dataset}...")
+
+    # 2. 路径与结果目录
+    mixed_dir = os.path.join(project_root, "datasets", "mixed")
+    data_path = os.path.join(mixed_dir, args.dataset)
+
+    # 结果保存到 results/baseline_llm_{dataset}
+    result_save_dir = os.path.join(project_root, "results", run_name)
+    os.makedirs(result_save_dir, exist_ok=True)
+
+    output_csv = os.path.join(result_save_dir, "test_predictions.csv")
+    output_metrics = os.path.join(result_save_dir, "test_metrics.txt")
+
+    # 3. 加载数据 (只加载 Test 集)
+    print(">>> Loading Test Data...")
+
+    hf_ds_dict = load_from_disk(data_path)
+    test_ds = hf_ds_dict['test']
+
+    # 如果指定了 llm_limit，只跑前 N 条 (方便调试/省钱)
+    if args.llm_limit > 0:
+        print(f">>>Limiting to first {args.llm_limit} samples.")
+        test_ds = test_ds.select(range(min(args.llm_limit, len(test_ds))))
+
+    print(f">>> Total Samples: {len(test_ds)}")
+
+    # 4. 推理循环 (串行调用 API)
+    all_preds = []
+    all_golds = []
+
+    # 使用 tqdm 显示进度
+    for i, sample in tqdm(enumerate(test_ds), total=len(test_ds), desc="LLM Generating"):
+        # A. 调用 LLM 生成
+        # sample 是 HF Dataset 的一条数据，直接传给函数
+        # 函数内部会自动解析 nodes, edge_index, label_ids
+        generated_q = generate_baseline_question(sample)
+
+        # B. 获取参考答案 (Gold)
+        reference_q = sample['question']
+
+        # 简单清洗 (去掉可能存在的换行或首尾空格)
+        generated_q = generated_q.replace("\n", " ").strip()
+
+        all_preds.append(generated_q)
+        all_golds.append(reference_q)
+
+        # 可选：每隔几条打印一下看看
+        if i < 3:
+            print(f"\n[Sample {i}]")
+            print(f"Gen: {generated_q}")
+            print(f"Ref: {reference_q}")
+
+    llm_avg, llm_scores, llm_reasons, wandb_table = compute_llm_score(test_ds, all_preds, all_golds)
+
+    # 5. 保存生成的 Case
+    df = pd.DataFrame({
+        'Generated': all_preds,
+        'Reference': all_golds,
+        'LLM_Score': llm_scores,
+        'LLM_Reason': llm_reasons
+    })
+    df.to_csv(output_csv, index=False, encoding='utf-8-sig')
+    print(f"\n>>> Predictions saved to: {output_csv}")
+
+    # 6. 计算指标
+    scores = compute_metrics(all_preds, all_golds)
+    scores['LLM-Judge'] = llm_avg
+
+    print("\n" + "=" * 30)
+    print("       LLM BASELINE REPORT       ")
+    print("=" * 30)
+    print(f"Dataset: {args.dataset}")
+    print("-" * 30)
+    print(f"BLEU:    {scores['BLEU']}")
+    print(f"ROUGE-1: {scores['ROUGE-1']}")
+    print(f"ROUGE-2: {scores['ROUGE-2']}")
+    print(f"ROUGE-L: {scores['ROUGE-L']}")
+    print(f"METEOR:  {scores['METEOR']}")
+    print(f"BERTScore: {scores['BERTScore']}")
+    print(f"LLM-Judge: {scores['LLM-Judge']}")
+    print("=" * 30)
+
+    # 7. 保存指标到文件
+    with open(output_metrics, 'w') as f:
+        for k, v in scores.items():
+            f.write(f"{k}: {v}\n")
+
+    # 8. WandB 记录
+    wandb.summary.update(scores)
+    print(">>> Uploading WandB Table...")
+    wandb.log({"eval_results": wandb_table})
+    wandb.finish()
+
+    print(f"\n>>> Full results saved to: {result_save_dir}")
+
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run LLM Baseline (API-based)")
+
+    parser.add_argument('-d', '--dataset', type=str, required=True, help="dataset name (e.g., PQ_mix)")
+    parser.add_argument('--llm_limit', type=int, default=-1, help="Max samples for LLM eval (-1 for all)")
+
+    args = parser.parse_args()
+
+    llm_baseline(args)

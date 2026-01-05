@@ -6,7 +6,7 @@ model = 'openai/gpt-4o-mini'
 api_key = ''
 
 
-def generate_question(path_str, start, end):
+def generate_ref_question(path_str, start, end):
     client = OpenAI(
         base_url=base_url,
         api_key=api_key,
@@ -55,6 +55,118 @@ def generate_question(path_str, start, end):
     )
 
     return response.choices[0].message.content
+
+
+def generate_baseline_question(sample):
+    """
+    基于 Test 集中的子图样本生成问题 (用于 LLM Baseline)
+
+    Args:
+        sample (dict): 包含 'nodes', 'edge_index', 'edge_attr', 'label_ids' 的字典
+                       (PyG Data 转换来的 dict 或者 HuggingFace Dataset 的 item)
+
+    Returns:
+        str: 生成的问题
+    """
+    client = OpenAI(
+        base_url=base_url,
+        api_key=api_key,
+    )
+
+    # 1. 解析数据
+    nodes = sample['nodes']
+    edge_index = sample['edge_index']  # [[src...], [tgt...]]
+    edge_attr = sample['edge_attr']  # ["rel1", "rel2"...]
+
+    # 获取 Start 和 End 节点的文本
+    # 注意: sample['label_ids'] 可能是 [start_idx, end_idx]
+    # 在 build_dataset.py 里我们存的是 label_ids = [start_idx, end_idx]
+    start_idx = sample['label_ids'][0]
+    end_idx = sample['label_ids'][1]
+
+    start_node_text = nodes[start_idx].replace("[TOPIC] ", "")
+    end_node_text = nodes[end_idx].replace("[ANS] ", "")
+
+    # 2. 构建三元组描述 (Triples Description)
+    # 我们只保留正向关系 (不带 _inv 的)，以减少 Prompt 长度和干扰
+    triples_desc = []
+
+    # 处理 edge_index 格式 (可能是 PyG tensor 或者是 list)
+    src_list = edge_index[0]
+    tgt_list = edge_index[1]
+
+    for i in range(len(src_list)):
+        src = src_list[i]
+        tgt = tgt_list[i]
+        rel = edge_attr[i]
+
+        # 过滤反向边 (通常包含 _inv)
+        if "_inv" in rel:
+            continue
+
+        # 获取节点名
+        # 注意: 列表索引
+        if isinstance(src, int):
+            # 如果是 list (HF Dataset)
+            u = nodes[src].replace("[TOPIC] ", "").replace("[ANS] ", "")
+            v = nodes[tgt].replace("[TOPIC] ", "").replace("[ANS] ", "")
+        else:
+            # 如果是 Tensor (PyG Data)
+            u = nodes[src.item()].replace("[TOPIC] ", "").replace("[ANS] ", "")
+            v = nodes[tgt.item()].replace("[TOPIC] ", "").replace("[ANS] ", "")
+
+        triples_desc.append(f"({u}, {rel}, {v})")
+
+    triples_str = "\n".join(triples_desc)
+
+    # 3. Prompt 设计
+    # 这里需要让 LLM 自己在图中找路径
+    prompt = """
+    You are an expert in Multi-Hop Question Generation over Knowledge Graphs.
+
+    **Task:**
+    I will provide a set of triples (Subject, Relation, Object) representing a Knowledge Graph Subgraph.
+    Your goal is to generate a complex, multi-hop question where:
+    1. The question is about the **Start Node**.
+    2. The answer to the question is the **End Node**.
+    3. The question implicitly follows a logical path connecting the Start Node to the End Node within the subgraph.
+
+    **Constraints:**
+    - The question must be natural and fluent.
+    - **Do NOT** mention the name of the **End Node** (Answer) in the question. This is strictly forbidden.
+    - **Do NOT** explicitly list the relations (e.g., don't say "linked by relation X"). Use natural language phrasing.
+    - The question should require reasoning over the graph path (multi-hop).
+
+    **Input Data:**
+    - Subgraph Triples: A list of facts. Note that this subgraph may contain noise/irrelevant branches. You must find the path connecting Start to End.
+    - Start Node: [Topic]
+    - End Node: [Answer]
+
+    **Output:**
+    - Only output the generated question. Do not output any explanation.
+    """
+
+    user_content = f"""
+    [Subgraph Triples]:
+    {triples_str}
+
+    [Start Node]: {start_node_text}
+    [End Node]: {end_node_text}
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": user_content},
+            ],
+            temperature=0.0  # 保持评估稳定性
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"[LLM Baseline Error]: {e}")
+        return ""
 
 
 def evaluate_question(triples_str, start_node, end_node, ref_question, gen_question):
@@ -157,7 +269,7 @@ def evaluate_question(triples_str, start_node, end_node, ref_question, gen_quest
 
 if __name__ == "__main__":
     print(
-        generate_question(
+        generate_ref_question(
             "Xiaomi Phone -(invented)-> Lei Jun -(based in)-> China -(capital)-> Beijing",
             "Xiaomi Phone",
             "Beijing",
@@ -190,3 +302,18 @@ if __name__ == "__main__":
         gen_question="Is Beijing the capital of China?"
     )
     print(f"Test Case 2 Score: {score2}")  # 应该很低
+
+    mock_sample = {
+        "nodes": ["Roy Scheider", "multiple myeloma", "Susannah York", "[ANS] obesity", "leukemia", "[TOPIC] infection",
+                  "old age"],
+        "edge_index": [[1, 2, 1, 0, 1, 6, 1, 3, 3, 6, 5, 1, 5, 4], [2, 1, 0, 1, 6, 1, 3, 1, 6, 3, 1, 5, 4, 5]],
+        "edge_attr": ["_people_cause_of_death_people", "_people_cause_of_death_people_inv",
+                      "_people_cause_of_death_people", "_people_cause_of_death_people_inv",
+                      "_medicine_disease_risk_factors", "_medicine_disease_risk_factors_inv",
+                      "_medicine_disease_risk_factors", "_medicine_disease_risk_factors_inv",
+                      "_medicine_disease_risk_factors", "_medicine_disease_risk_factors_inv",
+                      "_medicine_symptom_symptom_of", "_medicine_symptom_symptom_of_inv",
+                      "_medicine_symptom_symptom_of", "_medicine_symptom_symptom_of_inv"], "label_ids": [5, 3],
+        "question": "What risk factors associated with the disease linked to an infection can contribute to obesity?"}
+    q = generate_baseline_question(mock_sample)
+    print(q)

@@ -4,7 +4,7 @@ import random
 import networkx as nx
 from tqdm import tqdm
 from datasets import Dataset, DatasetDict
-from llm import generate_question
+from llm import generate_ref_question
 
 # ==========================================
 # 1. 全局配置参数 (Path & Config)
@@ -176,7 +176,7 @@ def process_kb_file(kb_filename, num_hops, samples_per_node_attempts, noise_neig
                 llm_path_str += f" --({r})--> {v}"
 
             try:
-                question = generate_question(llm_path_str, path_nodes[0], path_nodes[-1])
+                question = generate_ref_question(llm_path_str, path_nodes[0], path_nodes[-1])
                 if not question or "INVALID" in question: continue
 
                 sample_data = build_subgraph_data(G, path_nodes, path_edges, noise_neighbors)

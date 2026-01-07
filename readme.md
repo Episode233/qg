@@ -169,7 +169,7 @@ tqdm
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/Episode233/qg.git
+git clone https://github.com/Episode233/SAGE-QG.git
 cd qg
 
 # 2. 创建虚拟环境
